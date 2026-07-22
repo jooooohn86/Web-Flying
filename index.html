@@ -470,20 +470,24 @@ function loadGLB(cfg){
       model.scale.setScalar(scaleVal);
       const [rx,ry,rz] = cfg.rotation || [0,0,0];
       model.rotation.set(rx,ry,rz);
-      // 임시로 원점(0,0,0)에 두고 스케일/회전이 반영된 실제 바운딩 박스를 측정
       model.position.set(0,0,0);
+
+      let mixer = null;
+      if(gltf.animations && gltf.animations.length){
+        mixer = new THREE.AnimationMixer(model);
+        gltf.animations.forEach(clip => mixer.clipAction(clip).play());
+        mixer.update(0); // 첫 프레임(재생 시작 포즈)을 실제로 평가 — bind pose가 아니라 애니메이션 첫 프레임 기준으로 그라운딩
+        mixers.push(mixer);
+      }
+
+      // 스케일/회전/(있다면) 애니메이션 첫 프레임까지 반영된 실제 바운딩 박스를 측정
       model.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(model);
       const [px,py,pz] = cfg.position || [0,0,0];
+      const groundOffset = cfg.groundOffset ?? 0; // 자동 계산이 살짝 안 맞을 때 수동 미세조정용 (+면 위로, -면 아래로)
       // 모델의 최저점(box.min.y)이 정확히 py(섬 표면 높이)에 닿도록 y를 보정
-      // → Blender 원점이 중심/임의 위치여도 "파묻힘" 없이 항상 바닥에 서게 됨
-      model.position.set(px, py - box.min.y, pz);
+      model.position.set(px, py - box.min.y + groundOffset, pz);
       model.traverse(o=>{ if(o.isMesh){ o.castShadow = o.receiveShadow = true; } });
-      if(gltf.animations && gltf.animations.length){
-        const mixer = new THREE.AnimationMixer(model);
-        gltf.animations.forEach(clip => mixer.clipAction(clip).play());
-        mixers.push(mixer);
-      }
       resolve(model);
     }, undefined, (err)=>{
       console.warn('GLB 로드 실패, 절차적 도형으로 대체:', cfg.url, err);
